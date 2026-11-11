@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Check, ShieldCheck, X } from "lucide-react";
 import { api, type Approval } from "@/lib/api";
 import { Button, ErrorNote, Page, StatusPill, formatDate } from "@/components/ui";
 
@@ -43,33 +45,48 @@ export default function Approvals({ isAdmin }: { isAdmin: boolean }) {
       {!isAdmin ? (
         <ErrorNote message="Only admins can review approvals." />
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-10">
           {error && <ErrorNote message={error} />}
-          {items === null && !error && <p className="text-slate">Loading approvals…</p>}
+          {items === null && !error && <div className="h-28 animate-pulse rounded-2xl bg-white/[0.03]" aria-label="Loading approvals" />}
 
           {items && (
             <section>
-              <h3 className="mb-3 font-display text-lg font-semibold">Waiting for review ({pending.length})</h3>
+              <h3 className="mb-4 flex items-center gap-2 font-display text-base font-medium">
+                Waiting for review
+                <span className="rounded-full bg-amber/15 px-2 py-0.5 font-sans text-xs text-amber">{pending.length}</span>
+              </h3>
               {pending.length === 0 ? (
-                <p className="text-slate">Nothing to review.</p>
+                <div className="flex items-center gap-3 rounded-2xl border border-line bg-white/[0.02] px-5 py-6 text-muted">
+                  <ShieldCheck size={20} className="text-mint" />
+                  Nothing to review.
+                </div>
               ) : (
                 <ul className="space-y-3">
-                  {pending.map((a) => (
-                    <li key={a.id} className="rounded-md border border-line bg-paper p-4">
-                      <p className="font-medium">{a.question}</p>
-                      <p className="mt-1 text-sm text-slate">
-                        Asked by {a.requester}, {formatDate(a.created_at)}
-                      </p>
-                      <div className="mt-3 flex gap-2">
-                        <Button onClick={() => decide(a.id, true)} disabled={deciding === a.id}>
-                          Approve
-                        </Button>
-                        <Button variant="danger" onClick={() => decide(a.id, false)} disabled={deciding === a.id}>
-                          Reject
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {pending.map((a) => (
+                      <motion.li
+                        key={a.id}
+                        layout
+                        exit={{ opacity: 0, x: 40 }}
+                        className="relative overflow-hidden rounded-2xl border border-amber/25 bg-gradient-to-br from-amber/[0.07] to-transparent p-5"
+                      >
+                        <p className="font-medium leading-relaxed">{a.question}</p>
+                        <p className="mt-1.5 text-sm text-muted">
+                          Asked by {a.requester}, {formatDate(a.created_at)}
+                        </p>
+                        <div className="mt-4 flex gap-2">
+                          <Button onClick={() => decide(a.id, true)} disabled={deciding === a.id}>
+                            <Check size={15} />
+                            Approve
+                          </Button>
+                          <Button variant="danger" onClick={() => decide(a.id, false)} disabled={deciding === a.id}>
+                            <X size={15} />
+                            Reject
+                          </Button>
+                        </div>
+                      </motion.li>
+                    ))}
+                  </AnimatePresence>
                 </ul>
               )}
             </section>
@@ -77,13 +94,13 @@ export default function Approvals({ isAdmin }: { isAdmin: boolean }) {
 
           {reviewed.length > 0 && (
             <section>
-              <h3 className="mb-3 font-display text-lg font-semibold">Reviewed</h3>
-              <ul className="divide-y divide-line rounded-md border border-line bg-paper">
+              <h3 className="mb-4 font-display text-base font-medium">Reviewed</h3>
+              <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white/[0.02]">
                 {reviewed.map((a) => (
-                  <li key={a.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
+                  <li key={a.id} className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="min-w-0 flex-1">
                       <p>{a.question}</p>
-                      <p className="mt-1 text-sm text-slate">
+                      <p className="mt-1 text-sm text-muted">
                         {a.reviewer ? `Reviewed by ${a.reviewer}` : "Reviewed"}
                         {a.reviewed_at ? `, ${formatDate(a.reviewed_at)}` : ""}
                       </p>

@@ -1,37 +1,136 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { ArrowUp, Check, Copy, Layers, ShieldCheck, SquarePen, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { api, type ChatResponse, type Source } from "@/lib/api";
-import { Button, ErrorNote } from "@/components/ui";
+import { Button, ErrorNote, Orb, hueStyle } from "@/components/ui";
 
 type Turn =
   | { role: "user"; text: string }
-  // `restored` turns come from history after a reload. Feedback is hidden so a vote is not counted twice.
+  // `restored` turns come from history after a reload. They skip the reveal, and feedback is hidden so a vote is not counted twice.
   | { role: "assistant"; res: ChatResponse; rated?: -1 | 1; restored?: boolean };
 
 const STORAGE_KEY = "dossiq.conversation";
 
-// Turn "text [1] more [2]" into text with clickable citation markers.
-function withCitations(text: string, sources: Source[], onCite: (n: number) => void) {
-  const known = new Set(sources.map((s) => s.index));
-  return text.split(/(\[\d+\])/g).map((part, i) => {
-    const m = part.match(/^\[(\d+)\]$/);
-    if (m && known.has(Number(m[1]))) {
-      const n = Number(m[1]);
-      return (
-        <button key={i} className="cite" onClick={() => onCite(n)} aria-label={`Show source ${n}`}>
-          {n}
-        </button>
-      );
-    }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
-}
+const SUGGESTIONS = ["What is our remote work policy?", "Summarize the latest security guidelines", "Who approves travel expenses?"];
+
+const THINKING_STEPS = ["Searching your documents", "Reading the best passages", "Writing the answer"];
 
 const NOTICE: Partial<Record<ChatResponse["status"], string>> = {
   no_evidence: "No matching passages were found. Upload a document that covers this topic, or rephrase the question.",
   guardrail_blocked: "The answer was hidden because it contained sensitive data.",
 };
+
+const ease = [0.22, 1, 0.36, 1] as const;
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Turn "[1]" into a markdown link "#cite-1" so the renderer can swap it for a citation button.
+function linkCitations(text: string, sources: Source[]) {
+  const known = new Set(sources.map((s) => s.index));
+  return text.replace(/\[(\d+)\](?!\()/g, (whole, n) => (known.has(Number(n)) ? `[${n}](#cite-${n})` : whole));
+}
+
+// Reveal an answer a few words at a time, so it reads like it is being written.
+function useReveal(text: string, animate: boolean) {
+  const parts = useMemo(() => text.split(/(\s+)/), [text]);
+  const [count, setCount] = useState(() => (animate && !prefersReducedMotion() ? 0 : parts.length));
+  useEffect(() => {
+    if (count >= parts.length) return;
+    const step = Math.max(1, Math.ceil(parts.length / 120));
+    const id = setInterval(() => setCount((c) => Math.min(parts.length, c + step)), 16);
+    return () => clearInterval(id);
+    // Run once per answer; `count` only seeds the start.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parts.length]);
+  return { shown: parts.slice(0, count).join(""), done: count >= parts.length };
+}
+
+function Answer({ res, animate, onCite }: { res: ChatResponse; animate: boolean; onCite: (n: number) => void }) {
+  const { shown, done } = useReveal(res.answer, animate);
+
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ href, children }) => {
+        const m = href?.match(/^#cite-(\d+)$/);
+        if (m) {
+          const n = Number(m[1]);
+          return (
+            <button type="button" className="cite" style={hueStyle(n)} onClick={() => onCite(n)} aria-label={`Show source ${n}`}>
+              {n}
+            </button>
+          );
+        }
+        return (
+          <a href={href} target="_blank" rel="noreferrer">
+            {children}
+          </a>
+        );
+      },
+    }),
+    [onCite],
+  );
+
+  return (
+    <div className={`answer ${done ? "" : "caret"}`}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {linkCitations(shown, res.sources)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function Thinking() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setStep((s) => Math.min(s + 1, THINKING_STEPS.length - 1)), 1800);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <motion.li initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-4" aria-live="polite">
+      <Orb size={26} thinking />
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={step}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25 }}
+          className="shimmer font-medium"
+        >
+          {THINKING_STEPS[step]}
+        </motion.span>
+      </AnimatePresence>
+    </motion.li>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard
+          ?.writeText(text)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1600);
+          })
+          .catch(() => {});
+      }}
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition hover:bg-white/[0.06] hover:text-text"
+      aria-label="Copy answer"
+    >
+      {copied ? <Check size={14} className="text-mint" /> : <Copy size={14} />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
 
 export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -41,7 +140,10 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
   const [error, setError] = useState("");
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [flash, setFlash] = useState<number | null>(null);
+  // Small screens show sources in a bottom sheet, opened on demand.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   // Set once the user acts, so a slow history restore cannot overwrite newer state.
   const userActed = useRef(false);
   // True until we know whether there is a saved conversation to restore.
@@ -78,8 +180,16 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, busy]);
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
+  // Grow the input with its content, up to a limit.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [question]);
+
+  async function send(e?: React.FormEvent) {
+    e?.preventDefault();
     const q = question.trim();
     if (q.length < 3 || busy) return;
     userActed.current = true;
@@ -115,168 +225,293 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {}
+    inputRef.current?.focus();
   }
 
   function cite(sources: Source[], n: number) {
     setActiveSources(sources);
+    setSheetOpen(true);
     setFlash(n);
     requestAnimationFrame(() => document.getElementById(`source-${n}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }
 
-  async function rate(index: number, rating: -1 | 1) {
+  function rate(index: number, rating: -1 | 1) {
     setTurns((t) => t.map((turn, i) => (i === index && turn.role === "assistant" ? { ...turn, rated: rating } : turn)));
     api.feedback(rating).catch(() => {});
   }
 
+  const firstQuestion = turns.find((t) => t.role === "user");
+  const empty = turns.length === 0 && !busy && !restoring;
+
   return (
     <div className="flex h-full flex-col lg:flex-row">
       <section className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3 md:px-8">
-          <h2 className="font-display text-lg font-semibold">Ask a question</h2>
+        <div className="flex min-h-16 items-center justify-between gap-4 border-b border-line px-4 py-3 md:px-8">
+          <h2 className="truncate font-medium text-muted">
+            {firstQuestion?.role === "user" ? firstQuestion.text : "New conversation"}
+          </h2>
           {turns.length > 0 && (
-            <Button variant="quiet" onClick={newConversation}>
+            <Button variant="quiet" onClick={newConversation} className="shrink-0 !px-4 !py-2">
+              <SquarePen size={15} />
               New conversation
             </Button>
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 md:px-8">
           {restoring && turns.length === 0 && (
-            <p className="mx-auto mt-10 max-w-lg text-slate" aria-live="polite">
-              Loading your last conversation…
-            </p>
-          )}
-          {turns.length === 0 && !busy && !restoring && (
-            <div className="mx-auto mt-10 max-w-lg">
-              <p className="font-display text-3xl leading-tight font-semibold tracking-tight">
-                Ask anything your documents can answer.
-              </p>
-              <p className="mt-3 text-slate">
-                Every answer cites the passages it used. Click a yellow marker to read the source.
-              </p>
-              <ul className="mt-6 space-y-2">
-                {["What is our remote work policy?", "Summarize the latest security guidelines", "Who approves travel expenses?"].map((s) => (
-                  <li key={s}>
-                    <button onClick={() => setQuestion(s)} className="text-left text-teal underline-offset-4 hover:underline">
-                      {s}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            <div className="mx-auto mt-16 flex max-w-2xl items-center gap-3 text-muted" aria-live="polite">
+              <Orb size={20} thinking />
+              Loading your last conversation
             </div>
           )}
 
-          <ol className="mx-auto max-w-2xl space-y-6">
+          <AnimatePresence>
+            {empty && (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.4 }}
+                className="mx-auto mt-6 flex max-w-2xl flex-col items-center text-center md:mt-16"
+              >
+                <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.9, ease }}>
+                  <Orb size={88} />
+                </motion.div>
+                <motion.h3
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25, duration: 0.6, ease }}
+                  className="mt-10 font-display text-3xl leading-tight font-medium tracking-tight text-balance md:text-[2.6rem]"
+                >
+                  What do you want to know?
+                </motion.h3>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.45, duration: 0.6 }}
+                  className="mt-4 max-w-md leading-relaxed text-muted"
+                >
+                  Dossiq answers from your uploaded documents only. Every answer shows the passages it used.
+                </motion.p>
+                <motion.ul
+                  initial="hidden"
+                  animate="show"
+                  variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.6 } } }}
+                  className="mt-10 flex flex-wrap justify-center gap-2"
+                >
+                  {SUGGESTIONS.map((s) => (
+                    <motion.li key={s} variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}>
+                      <button
+                        onClick={() => {
+                          setQuestion(s);
+                          inputRef.current?.focus();
+                        }}
+                        className="rounded-full border border-line-strong bg-white/[0.03] px-4 py-2 text-sm text-muted transition hover:border-violet/60 hover:bg-violet/10 hover:text-text"
+                      >
+                        {s}
+                      </button>
+                    </motion.li>
+                  ))}
+                </motion.ul>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <ol className="mx-auto max-w-2xl space-y-8">
             {turns.map((turn, i) =>
               turn.role === "user" ? (
-                <li key={i} className="flex justify-end">
-                  <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-ink px-4 py-2.5 whitespace-pre-wrap text-paper">{turn.text}</p>
-                </li>
+                <motion.li
+                  key={i}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.35, ease }}
+                  className="flex justify-end"
+                >
+                  <p className="max-w-[85%] rounded-3xl rounded-br-md border border-line-strong bg-raised px-5 py-3 whitespace-pre-wrap">
+                    {turn.text}
+                  </p>
+                </motion.li>
               ) : (
-                <li key={i} className="space-y-2">
-                  {turn.res.status === "pending_approval" ? (
-                    <div className="rounded-lg border border-marker bg-marker/15 px-4 py-3">
-                      <p>{turn.res.answer}</p>
-                      <button onClick={onOpenApprovals} className="mt-2 text-sm font-semibold text-teal underline underline-offset-4">
-                        Open approvals
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="leading-relaxed whitespace-pre-wrap">
-                        {withCitations(turn.res.answer, turn.res.sources, (n) => cite(turn.res.sources, n))}
-                      </p>
-                      {NOTICE[turn.res.status] && <p className="text-sm text-slate">{NOTICE[turn.res.status]}</p>}
-                    </>
-                  )}
-                  {turn.res.status === "answered" && (
-                    <div className="flex items-center gap-3 text-sm text-slate">
-                      {turn.res.sources.length > 0 && (
-                        <button onClick={() => setActiveSources(turn.res.sources)} className="hover:text-ink">
-                          {turn.res.sources.length} {turn.res.sources.length === 1 ? "source" : "sources"}
+                <motion.li
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease }}
+                  className="flex gap-4"
+                >
+                  <div className="pt-1">
+                    <Orb size={24} />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    {turn.res.status === "pending_approval" ? (
+                      <div className="rounded-2xl border border-amber/40 bg-amber/10 px-5 py-4">
+                        <p>{turn.res.answer}</p>
+                        <button onClick={onOpenApprovals} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-amber hover:underline">
+                          <ShieldCheck size={15} />
+                          Open approvals
                         </button>
-                      )}
-                      {turn.restored ? null : turn.rated ? (
-                        <span>Thanks for the feedback</span>
-                      ) : (
-                        <>
-                          <button onClick={() => rate(i, 1)} className="hover:text-teal" aria-label="Helpful answer">
-                            Helpful
+                      </div>
+                    ) : (
+                      <>
+                        <Answer res={turn.res} animate={!turn.restored} onCite={(n) => cite(turn.res.sources, n)} />
+                        {NOTICE[turn.res.status] && (
+                          <p className="rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-sm text-muted">{NOTICE[turn.res.status]}</p>
+                        )}
+                      </>
+                    )}
+                    {turn.res.status === "answered" && (
+                      <div className="-ml-2.5 flex flex-wrap items-center gap-1 text-sm text-muted">
+                        {turn.res.sources.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setActiveSources(turn.res.sources);
+                              setSheetOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition hover:bg-white/[0.06] hover:text-text"
+                          >
+                            <Layers size={14} />
+                            {turn.res.sources.length} {turn.res.sources.length === 1 ? "source" : "sources"}
                           </button>
-                          <button onClick={() => rate(i, -1)} className="hover:text-alert" aria-label="Not helpful answer">
-                            Not helpful
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </li>
+                        )}
+                        <CopyButton text={turn.res.answer} />
+                        {turn.restored ? null : turn.rated ? (
+                          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="px-2.5 py-1 text-mint">
+                            Thanks for the feedback
+                          </motion.span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => rate(i, 1)}
+                              className="rounded-full p-1.5 transition hover:bg-mint/10 hover:text-mint"
+                              aria-label="Helpful answer"
+                              title="Helpful"
+                            >
+                              <ThumbsUp size={15} />
+                            </button>
+                            <button
+                              onClick={() => rate(i, -1)}
+                              className="rounded-full p-1.5 transition hover:bg-danger-soft hover:text-danger"
+                              aria-label="Not helpful answer"
+                              title="Not helpful"
+                            >
+                              <ThumbsDown size={15} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </motion.li>
               ),
             )}
-            {busy && (
-              <li className="text-slate" aria-live="polite">
-                Searching your documents…
-              </li>
-            )}
+            <AnimatePresence>{busy && <Thinking key="thinking" />}</AnimatePresence>
           </ol>
           <div ref={endRef} />
         </div>
 
-        <form onSubmit={send} className="border-t border-line bg-paper px-4 py-4 md:px-8">
+        <form onSubmit={send} className="px-4 pt-2 pb-4 md:px-8 md:pb-6">
           <div className="mx-auto max-w-2xl space-y-3">
             {error && <ErrorNote message={error} />}
-            <div className="flex items-end gap-2">
+            <div className="ring-prism glass flex items-end gap-2 rounded-[28px] p-2 pl-5 shadow-[0_20px_60px_-25px_rgb(124_58_237_/_0.6)]">
               <label htmlFor="question" className="sr-only">
                 Your question
               </label>
               <textarea
                 id="question"
+                ref={inputRef}
                 rows={1}
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) send(e);
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
                 }}
-                placeholder="Ask a question"
+                placeholder="Ask about your documents"
                 maxLength={2000}
-                className="max-h-40 min-h-11 flex-1 resize-y rounded-md border border-line bg-fog px-3 py-2.5 placeholder:text-slate/70 focus:border-teal focus:outline-none"
+                className="max-h-[200px] min-h-10 flex-1 resize-none bg-transparent py-2.5 leading-relaxed placeholder:text-faint focus:outline-none focus-visible:outline-none"
               />
-              <Button type="submit" disabled={busy || question.trim().length < 3} className="h-11">
-                Ask
-              </Button>
+              <button
+                type="submit"
+                disabled={busy || question.trim().length < 3}
+                aria-label="Send question"
+                className="btn-prism grid h-10 w-10 shrink-0 place-items-center rounded-full transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ArrowUp size={18} strokeWidth={2.5} />
+              </button>
             </div>
+            <p className="hidden text-center text-xs text-faint md:block">Enter to send. Shift + Enter for a new line.</p>
           </div>
         </form>
       </section>
 
-      <aside className="max-h-72 shrink-0 overflow-y-auto border-t border-line bg-paper px-5 py-5 lg:max-h-none lg:w-80 lg:border-t-0 lg:border-l">
-        <h3 className="font-display font-semibold">Sources</h3>
+      <AnimatePresence>
+        {sheetOpen && (
+          <motion.button
+            key="backdrop"
+            aria-label="Close sources"
+            onClick={() => setSheetOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-30 bg-night/70 backdrop-blur-sm lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+      <aside
+        className={`${
+          sheetOpen ? "fixed inset-x-0 bottom-0 z-40 max-h-[72vh] rounded-t-3xl border-t border-line-strong bg-surface shadow-2xl" : "hidden"
+        } shrink-0 overflow-y-auto px-5 py-6 lg:static lg:block lg:max-h-none lg:w-[340px] lg:rounded-none lg:border-t-0 lg:border-l lg:border-line lg:bg-surface/50 lg:shadow-none lg:backdrop-blur-xl`}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="flex items-center gap-2 font-display text-sm font-medium tracking-tight">
+            Sources
+            {activeSources.length > 0 && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 font-sans text-xs text-muted">{activeSources.length}</span>}
+          </h3>
+          <button onClick={() => setSheetOpen(false)} className="rounded-full p-1.5 text-muted hover:bg-white/[0.06] hover:text-text lg:hidden" aria-label="Close sources">
+            <X size={18} />
+          </button>
+        </div>
         {activeSources.length === 0 ? (
-          <p className="mt-2 text-sm text-slate">Sources for the latest answer appear here.</p>
+          <p className="mt-3 text-sm leading-relaxed text-muted">The passages behind each answer show up here. Click a colored number in an answer to jump to its source.</p>
         ) : (
-          <ol className="mt-4 space-y-3">
-            {activeSources.map((s) => (
-              <li
-                key={s.index}
-                id={`source-${s.index}`}
-                onAnimationEnd={() => setFlash(null)}
-                className={`rounded-md border border-line p-3 ${flash === s.index ? "source-flash" : ""}`}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="cite !cursor-default !align-baseline">{s.index}</span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold" title={s.title}>
-                      {s.title || "Untitled document"}
-                    </p>
-                    <p className="text-xs text-slate">Page {s.page}</p>
+          <ol className="mt-5 space-y-3">
+            <AnimatePresence initial={false} mode="popLayout">
+              {activeSources.map((s, i) => (
+                <motion.li
+                  key={`${s.document_id}-${s.index}-${s.excerpt.slice(0, 20)}`}
+                  layout
+                  initial={{ opacity: 0, x: 16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -16 }}
+                  transition={{ duration: 0.3, delay: i * 0.05, ease }}
+                  id={`source-${s.index}`}
+                  onAnimationEnd={() => setFlash(null)}
+                  style={hueStyle(s.index)}
+                  className={`source-card rounded-2xl border border-line bg-white/[0.025] p-4 ${flash === s.index ? "source-flash" : ""}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="cite !m-0 !cursor-default !align-baseline">{s.index}</span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold" title={s.title}>
+                        {s.title || "Untitled document"}
+                      </p>
+                      <p className="text-xs text-muted">Page {s.page}</p>
+                    </div>
                   </div>
-                </div>
-                <p className="mt-2 text-[13px] leading-relaxed text-slate">{s.excerpt}</p>
-              </li>
-            ))}
+                  <p className="mt-3 border-l-2 pl-3 text-[13px] leading-relaxed text-muted" style={{ borderColor: "color-mix(in oklab, var(--hue) 50%, transparent)" }}>
+                    {s.excerpt}
+                  </p>
+                </motion.li>
+              ))}
+            </AnimatePresence>
           </ol>
         )}
       </aside>
     </div>
   );
 }
+
