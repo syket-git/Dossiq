@@ -11,6 +11,14 @@ Every answer points to the exact page it came from.
 
 <br/>
 
+Designed and built by **[Syket Bhattachergee](https://syketb.vercel.app/)**
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Syket_Bhattachergee-a78bfa?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/syketb)
+[![Website](https://img.shields.io/badge/Website-syketb.vercel.app-5eead4?style=flat-square&logo=vercel&logoColor=white)](https://syketb.vercel.app/)
+[![GitHub](https://img.shields.io/badge/GitHub-syket--git-fdba74?style=flat-square&logo=github&logoColor=white)](https://github.com/syket-git)
+
+<br/>
+
 ![Next.js](https://img.shields.io/badge/Next.js_16-0e0b1f?style=for-the-badge&logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React_19-0e0b1f?style=for-the-badge&logo=react&logoColor=5eead4)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0e0b1f?style=for-the-badge&logo=fastapi&logoColor=5eead4)
@@ -336,8 +344,20 @@ Dossiq is currently a single-workspace demo. Before using it for real, keep in m
 
 <br/>
 
+## About the author
+
+**Syket Bhattachergee** is a Forward Deployed Engineer building AI products. Syket designed and built Dossiq end to end: the AI pipeline, the API, the data layer, and the interface.
+
+- 💼 LinkedIn: [linkedin.com/in/syketb](https://www.linkedin.com/in/syketb)
+- 🌐 Website: [syketb.vercel.app](https://syketb.vercel.app/)
+- 🐙 GitHub: [@syket-git](https://github.com/syket-git)
+
+Want to talk about AI products, RAG systems, or this project? Reach out on LinkedIn.
+
+<br/>
+
 <div align="center">
   <img src="docs/images/logo.svg" width="40" alt="" />
   <br/>
-  <sub>Built with care for teams who want answers they can trust.</sub>
+  <sub>Dossiq is designed and built by <a href="https://syketb.vercel.app/">Syket Bhattachergee</a>.</sub>
 </div>
