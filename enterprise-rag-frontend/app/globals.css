@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+:root {
+  --fog: #edf1f2;
+  --paper: #ffffff;
+  --ink: #16262e;
+  --slate: #5b6f79;
+  --line: #d3dcdf;
+  --teal: #1d6a72;
+  --teal-soft: #dcebec;
+  --marker: #f2c230;
+  --alert: #b23a2a;
+  --alert-soft: #f6e2de;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fog: #0f1a1f;
+    --paper: #16242b;
+    --ink: #e4ecee;
+    --slate: #94a8b1;
+    --line: #2a3c44;
+    --teal: #5fb3ba;
+    --teal-soft: #1b3539;
+    --marker: #e8b92a;
+    --alert: #ef8a78;
+    --alert-soft: #3a211d;
+  }
+}
+
+@theme inline {
+  --color-fog: var(--fog);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-slate: var(--slate);
+  --color-line: var(--line);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-marker: var(--marker);
+  --color-alert: var(--alert);
+  --color-alert-soft: var(--alert-soft);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-body);
+}
+
+body {
+  background: var(--fog);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* Citation marker: the one bold element in the UI. */
+.cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35em;
+  height: 1.35em;
+  padding: 0 0.3em;
+  margin: 0 0.1em;
+  border-radius: 3px 3px 3px 0;
+  background: var(--marker);
+  color: #1d1a0c;
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: 0.25em;
+  cursor: pointer;
+}
+
+.source-flash {
+  animation: flash 1.2s ease-out;
+}
+
+@keyframes flash {
+  from { box-shadow: 0 0 0 3px var(--marker); }
+  to { box-shadow: 0 0 0 3px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-flash { animation: none; }
+  * { scroll-behavior: auto !important; }
+}

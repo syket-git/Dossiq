@@ -1,0 +1,28 @@
+[project]
+name = "enterprise-rag-system"
+version = "0.1.0"
+description = "Dossiq enterprise RAG backend"
+readme = "README.md"
+authors = [
+    { name = "syket", email = "syketweb@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "boto3>=1.43.126",
+    "fastapi>=0.162.2",
+    "glassflow-rius>=1.5.6",
+    "langgraph>=1.2.20",
+    "openai>=3.46.0",
+    "pinecone>=10.3.0",
+    "psycopg[binary,pool]>=3.3.8",
+    "pydantic-settings>=2.16.2",
+    "pypdf>=7.0.0",
+    "python-docx>=1.2.0",
+    "python-dotenv>=1.2.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.uv]
+package = false
+# Project is on an external volume, so hardlinks from the uv cache fail.
+link-mode = "copy"
