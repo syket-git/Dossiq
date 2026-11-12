@@ -13,7 +13,6 @@ type Turn =
   // `restored` turns come from history after a reload. They skip the reveal, and feedback is hidden so a vote is not counted twice.
   | { role: "assistant"; res: ChatResponse; rated?: -1 | 1; restored?: boolean };
 
-const STORAGE_KEY = "dossiq.conversation";
 
 const SUGGESTIONS = ["What is our remote work policy?", "Summarize the latest security guidelines", "Who approves travel expenses?"];
 
@@ -23,6 +22,23 @@ const NOTICE: Partial<Record<ChatResponse["status"], string>> = {
   no_evidence: "No matching passages were found. Upload a document that covers this topic, or rephrase the question.",
   guardrail_blocked: "The answer was hidden because it contained sensitive data.",
 };
+
+type StoredMessage = { role: string; content: string; sources: Source[] | null; status: ChatResponse["status"] | null };
+
+function toTurns(messages: StoredMessage[], restored = true): Turn[] {
+  return messages.map((m) =>
+    m.role === "user"
+      ? { role: "user", text: m.content }
+      : { role: "assistant", restored, res: { answer: m.content, sources: m.sources ?? [], status: m.status ?? "answered" } },
+  );
+}
+
+function latestSources(turns: Turn[]) {
+  const last = turns.findLast((t) => t.role === "assistant" && t.res.sources.length > 0);
+  return last?.role === "assistant" ? last.res.sources : [];
+}
+
+const APPROVAL_POLL_MS = 5000;
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -132,7 +148,14 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void }) {
+export default function Chat({
+  workspaceId,
+  onOpenApprovals,
+}: {
+  workspaceId: string;
+  onOpenApprovals?: () => void;
+}) {
+  const STORAGE_KEY = `dossiq.conversation.${workspaceId}`;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [question, setQuestion] = useState("");
@@ -159,22 +182,32 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
       .finally(() => setRestoring(false))
       .then(({ messages }) => {
         if (!id || userActed.current || messages.length === 0) return;
-        const restored: Turn[] = messages.map((m) =>
-          m.role === "user"
-            ? { role: "user", text: m.content }
-            : {
-                role: "assistant",
-                restored: true,
-                res: { answer: m.content, sources: m.sources ?? [], status: m.status ?? "answered" },
-              },
-        );
+        const restored = toTurns(messages);
         setConversationId(id!);
         setTurns(restored);
-        const last = restored.findLast((t) => t.role === "assistant");
-        if (last?.role === "assistant") setActiveSources(last.res.sources);
+        setActiveSources(latestSources(restored));
       })
       .catch(() => {});
-  }, []);
+  }, [STORAGE_KEY]);
+
+  const lastTurn = turns.at(-1);
+  const waiting = !busy && lastTurn?.role === "assistant" && lastTurn.res.status === "pending_approval";
+  useEffect(() => {
+    if (!waiting || !conversationId) return;
+    const known = turns.length;
+    const id = setInterval(() => {
+      api
+        .messages(conversationId)
+        .then(({ messages }) => {
+          if (messages.length <= known) return;
+          const next = [...toTurns(messages.slice(0, known)), ...toTurns(messages.slice(known), false)];
+          setTurns(next);
+          setActiveSources(latestSources(next));
+        })
+        .catch(() => {});
+    }, APPROVAL_POLL_MS);
+    return () => clearInterval(id);
+  }, [waiting, conversationId, turns.length]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -206,7 +239,7 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
         } catch {}
       }
       setTurns((t) => [...t, { role: "assistant", res }]);
-      setActiveSources(res.sources);
+      if (res.sources.length > 0) setActiveSources(res.sources);
     } catch (err) {
       setError((err as Error).message);
       setTurns((t) => t.slice(0, -1));
@@ -348,10 +381,12 @@ export default function Chat({ onOpenApprovals }: { onOpenApprovals: () => void 
                     {turn.res.status === "pending_approval" ? (
                       <div className="rounded-2xl border border-amber/40 bg-amber/10 px-5 py-4">
                         <p>{turn.res.answer}</p>
-                        <button onClick={onOpenApprovals} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-amber hover:underline">
-                          <ShieldCheck size={15} />
-                          Open approvals
-                        </button>
+                        {onOpenApprovals && (
+                          <button onClick={onOpenApprovals} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-amber hover:underline">
+                            <ShieldCheck size={15} />
+                            Open approvals
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <>

@@ -12,6 +12,7 @@ export type ChatStatus =
   | "answered"
   | "no_evidence"
   | "pending_approval"
+  | "approval_rejected"
   | "guardrail_blocked";
 
 export type ChatResponse = {
@@ -34,11 +35,15 @@ export type DocumentRow = {
 export type Approval = {
   id: string;
   requester: string;
+  requester_name: string | null;
   question: string;
   status: "pending" | "approved" | "rejected";
   reviewer: string | null;
+  reviewer_name: string | null;
+  answer_status: ChatStatus | null;
   created_at: string;
   reviewed_at: string | null;
+  answered_at: string | null;
 };
 
 export type Info = {
@@ -46,6 +51,8 @@ export type Info = {
   mode: string;
   user: string;
   tenant: string;
+  workspace_slug: string;
+  role: string;
   admin: boolean;
   hitl_enabled: boolean;
 };
@@ -58,12 +65,22 @@ export class ApiError extends Error {
   }
 }
 
+let getToken: () => Promise<string | null> = async () => null;
+export function setTokenGetter(fn: () => Promise<string | null>) {
+  getToken = fn;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
+    const token = await getToken();
     res = await fetch(path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError(0, "Cannot reach the API. Check that FastAPI is running on port 8000.");
@@ -133,5 +150,5 @@ export const api = {
 
   approvals: () => request<{ approvals: Approval[] }>("/api/approvals"),
   decide: (id: string, approve: boolean) =>
-    post<{ status: string; executed: boolean }>(`/api/approvals/${id}/decision`, { approve }),
+    post<{ status: string; answer_status: ChatStatus | null }>(`/api/approvals/${id}/decision`, { approve }),
 };

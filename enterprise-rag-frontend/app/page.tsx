@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ChartColumn, FileText, MessageCircle, ShieldCheck } from "lucide-react";
-import { api, type Info } from "@/lib/api";
+import { OrganizationList, OrganizationSwitcher, Show, SignIn, UserButton, useAuth, useUser } from "@clerk/nextjs";
+import { api, setTokenGetter, type Info } from "@/lib/api";
 import { Orb } from "@/components/ui";
 import Chat from "@/components/Chat";
 import Documents from "@/components/Documents";
@@ -11,10 +12,10 @@ import Approvals from "@/components/Approvals";
 import Insights from "@/components/Insights";
 
 const VIEWS = [
-  { id: "ask", label: "Ask", icon: MessageCircle },
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "approvals", label: "Approvals", icon: ShieldCheck },
-  { id: "insights", label: "Insights", icon: ChartColumn },
+  { id: "ask", label: "Ask", icon: MessageCircle, adminOnly: false },
+  { id: "documents", label: "Documents", icon: FileText, adminOnly: false },
+  { id: "approvals", label: "Approvals", icon: ShieldCheck, adminOnly: true },
+  { id: "insights", label: "Insights", icon: ChartColumn, adminOnly: true },
 ] as const;
 
 type ViewId = (typeof VIEWS)[number]["id"];
@@ -31,9 +32,56 @@ const STATE_COLOR = {
 };
 
 export default function Home() {
+  return (
+    <>
+      <Show when="signed-out">
+        <Centered title="Dossiq" subtitle="Answers from your team's documents.">
+          <SignIn routing="hash" />
+        </Centered>
+      </Show>
+      <Show when="signed-in">
+        <SignedInApp />
+      </Show>
+    </>
+  );
+}
+
+function Centered({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center gap-6 px-4 py-10">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <Orb size={40} />
+        <h1 className="font-display text-2xl font-medium tracking-tight">{title}</h1>
+        <p className="text-sm text-muted">{subtitle}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SignedInApp() {
+  const { orgId, orgRole, getToken } = useAuth();
+  // Set during render: child effects run before parent effects.
+  setTokenGetter(() => getToken());
+
+  if (!orgId) {
+    return (
+      <Centered title="Choose a workspace" subtitle="Create a workspace for your team, or open one you were invited to.">
+        <OrganizationList hidePersonal afterSelectOrganizationUrl="/" afterCreateOrganizationUrl="/" />
+      </Centered>
+    );
+  }
+  return <Workspace key={orgId} workspaceId={orgId} isAdmin={orgRole === "org:admin"} />;
+}
+
+function Workspace({ workspaceId, isAdmin }: { workspaceId: string; isAdmin: boolean }) {
   const [view, setView] = useState<ViewId>("ask");
   const [info, setInfo] = useState<Info | null>(null);
   const [apiState, setApiState] = useState<keyof typeof STATE_TEXT>("checking");
+  const { user } = useUser();
+  const userName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "";
+  const views = VIEWS.filter((v) => isAdmin || !v.adminOnly);
+  const current = views.some((v) => v.id === view) ? view : "ask";
 
   useEffect(() => {
     api.info().then(setInfo).catch(() => setInfo(null));
@@ -52,11 +100,16 @@ export default function Home() {
             <h1 className="font-display text-xl font-medium tracking-tight">Dossiq</h1>
             <p className="hidden text-xs text-muted md:block">Answers from your documents</p>
           </div>
+          <div className="ml-auto md:hidden">
+            <UserButton />
+          </div>
         </div>
 
+        <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/" afterCreateOrganizationUrl="/" />
+
         <nav aria-label="Main" className="flex gap-1 overflow-x-auto [scrollbar-width:none] md:flex-col">
-          {VIEWS.map(({ id, label, icon: Icon }) => {
-            const active = view === id;
+          {views.map(({ id, label, icon: Icon }) => {
+            const active = current === id;
             return (
               <button
                 key={id}
@@ -90,31 +143,24 @@ export default function Home() {
             </span>
             {STATE_TEXT[apiState]}
           </p>
-          {info && (
-            <dl className="space-y-1 text-muted">
-              <div>
-                <dt className="sr-only">Signed in as</dt>
-                <dd>Signed in as {info.user}</dd>
-              </div>
-              <div>
-                <dt className="sr-only">Workspace</dt>
-                <dd>
-                  {info.tenant}, {info.region}
-                </dd>
-              </div>
-            </dl>
-          )}
+          <div className="flex items-center gap-3 text-muted">
+            <UserButton />
+            <div className="min-w-0">
+              <p className="truncate text-text" title={userName}>{userName}</p>
+              <p>{isAdmin ? "Admin" : "Member"}{info ? `, ${info.region}` : ""}</p>
+            </div>
+          </div>
         </div>
       </aside>
 
       <main className="min-h-0 flex-1 overflow-hidden">
         {/* Chat stays mounted so the conversation and its sources survive tab switches. */}
-        <div className={view === "ask" ? "h-full" : "hidden"}>
-          <Chat onOpenApprovals={() => setView("approvals")} />
+        <div className={current === "ask" ? "h-full" : "hidden"}>
+          <Chat workspaceId={workspaceId} onOpenApprovals={isAdmin ? () => setView("approvals") : undefined} />
         </div>
-        {view === "documents" && <Documents />}
-        {view === "approvals" && <Approvals isAdmin={info?.admin ?? true} />}
-        {view === "insights" && <Insights />}
+        {current === "documents" && <Documents />}
+        {current === "approvals" && <Approvals isAdmin={isAdmin} />}
+        {current === "insights" && <Insights />}
       </main>
     </div>
   );

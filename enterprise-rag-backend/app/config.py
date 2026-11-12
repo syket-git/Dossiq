@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     memory_turns: int = 6
     # Comma-separated list of frontend origins allowed by CORS.
     cors_origins: str = "http://localhost:3000"
+    # "demo" skips Clerk and uses one fixed admin. Local use only.
+    auth_mode: str = "clerk"
+    clerk_issuer: str = ""
+    clerk_jwks_url: str = ""
+    clerk_secret_key: str = ""
 
 
 @lru_cache()

@@ -40,7 +40,7 @@ export default function Approvals({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Page
       title="Approvals"
-      intro="Questions that ask to delete, export, send, or change policy wait here for an admin. Approving records the decision. It does not run any action."
+      intro="Questions that ask to delete, export, send, or change policy wait here for an admin. Approving sends the answer to the person who asked. No action is ever run."
     >
       {!isAdmin ? (
         <ErrorNote message="Only admins can review approvals." />
@@ -72,7 +72,7 @@ export default function Approvals({ isAdmin }: { isAdmin: boolean }) {
                       >
                         <p className="font-medium leading-relaxed">{a.question}</p>
                         <p className="mt-1.5 text-sm text-muted">
-                          Asked by {a.requester}, {formatDate(a.created_at)}
+                          Asked by {a.requester_name ?? a.requester}, {formatDate(a.created_at)}
                         </p>
                         <div className="mt-4 flex gap-2">
                           <Button onClick={() => decide(a.id, true)} disabled={deciding === a.id}>
@@ -101,8 +101,10 @@ export default function Approvals({ isAdmin }: { isAdmin: boolean }) {
                     <div className="min-w-0 flex-1">
                       <p>{a.question}</p>
                       <p className="mt-1 text-sm text-muted">
-                        {a.reviewer ? `Reviewed by ${a.reviewer}` : "Reviewed"}
+                        Asked by {a.requester_name ?? a.requester}
+                        {a.reviewer ? `. Reviewed by ${a.reviewer_name ?? a.reviewer}` : ""}
                         {a.reviewed_at ? `, ${formatDate(a.reviewed_at)}` : ""}
+                        {a.status === "approved" && a.answered_at ? ". Answer sent." : ""}
                       </p>
                     </div>
                     <StatusPill status={a.status} />

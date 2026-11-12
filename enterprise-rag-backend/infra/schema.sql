@@ -36,3 +36,10 @@ CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages(tenant_id,
 -- Citations and answer status, so a reloaded conversation keeps its sources.
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sources jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS status text;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_sub text NOT NULL DEFAULT 'demo-operator';
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requester_name text;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS reviewer_name text;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS conversation_id uuid;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS answer_status text;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS answered_at timestamptz;
+CREATE INDEX IF NOT EXISTS chat_messages_user_idx ON chat_messages(tenant_id,user_sub,conversation_id,id DESC);
